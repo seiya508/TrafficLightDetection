@@ -1,0 +1,2 @@
+rootProject.name = "Traffic Light Detection"
+include ':app'
