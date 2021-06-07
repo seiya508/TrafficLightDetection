@@ -37,6 +37,7 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
     fun draw(
         roi: RectF,
         detectedObjectList: List<DetectionObject>,
+        redIsLighting : Boolean,
         imageProxySize: Size,
         resultViewSize: Size
     ) {
@@ -60,7 +61,7 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
 
         // ROIを白い矩形で囲う
         paint.apply {
-            color = Color.rgb(255, 255, 255)
+            color = Color.WHITE
             style = Paint.Style.STROKE
             strokeWidth = 7f
             isAntiAlias = false
@@ -90,7 +91,7 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
 
             // バウンディングボックスの表示
             paint.apply {
-                color = pathColorList[i]
+                color = if(redIsLighting){ Color.RED }else{ Color.GREEN }
                 style = Paint.Style.STROKE
                 strokeWidth = 7f
                 isAntiAlias = false

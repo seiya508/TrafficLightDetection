@@ -16,6 +16,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import com.example.android.camera.utils.com.example.trafficlightdetection.Analyze
 import com.example.android.camera.utils.com.example.trafficlightdetection.YuvToRgbConverter
 import kotlinx.android.synthetic.main.activity_main.*
+import org.opencv.android.OpenCVLoader
 import org.tensorflow.lite.Interpreter
 import java.io.BufferedReader
 import java.io.FileInputStream
@@ -56,6 +57,14 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(
                 this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
         }
+
+        Log.d("デバッグ", "Hello")
+
+        if( OpenCVLoader.initDebug() ){
+            Log.d("デバッグ", "Opencv Succeed")
+        }
+
+        Log.d("デバッグ", "Hello2")
 
         overlaySurfaceView = OverlaySurfaceView(resultView)
         cameraExecutor = Executors.newSingleThreadExecutor()
@@ -175,7 +184,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     // モデルの正解ラベルデータをassetsから取得
-    private fun loadLabels(fileName: String = MainActivity.LABEL_FILE_NAME): List<String> {
+    private fun loadLabels(fileName: String = LABEL_FILE_NAME): List<String> {
         var labels = listOf<String>()
         var inputStream: InputStream? = null
         try {

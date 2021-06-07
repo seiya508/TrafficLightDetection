@@ -1,16 +1,13 @@
-package com.example.android.camera.utils.com.example.trafficlightdetection
+package com.example.trafficlightdetection
 
-import android.annotation.SuppressLint
 import android.graphics.Bitmap
 import android.graphics.RectF
-import android.media.Image
 import android.util.Log
-import android.util.Size
-import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageProxy
-import com.example.trafficlightdetection.DetectionObject
-import com.example.trafficlightdetection.OverlaySurfaceView
-import kotlinx.android.synthetic.main.activity_main.*
+import org.opencv.android.Utils
+import org.opencv.core.Core
+import org.opencv.core.Mat
+import org.opencv.core.Scalar
+import org.opencv.imgproc.Imgproc
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.ops.NormalizeOp
@@ -24,21 +21,18 @@ import org.tensorflow.lite.support.image.ops.Rot90Op
  * @param yuvToRgbConverter カメラ画像のImageバッファYUV_420_888からRGB形式に変換する
  * @param interpreter tfliteモデルを操作するライブラリ
  * @param labels 正解ラベルのリスト
- *
- * @param overlaySurfaceView Surface Viewのコールバック
- * @param imageProxySize 取得画像のサイズ
- * @param resultViewSize プレビューのサイズ
+ * @param imageRotationDegrees
  */
-class Analyze(
-    private val yuvToRgbConverter: YuvToRgbConverter,
+
+class ObjectDetector(
     private val interpreter: Interpreter,
     private val labels: List<String>,
-
-    private var overlaySurfaceView: OverlaySurfaceView,
-    private val resultViewSize: Size
-) : ImageAnalysis.Analyzer {
+    private var imageRotationDegrees: Int = 0
+) {
 
     companion object {
+        private const val TAG = "ObjectDetector"
+
         // モデルのinputとoutputサイズ
         private const val IMG_SIZE_X = 300
         private const val IMG_SIZE_Y = 300
@@ -49,46 +43,10 @@ class Analyze(
         private const val NORMALIZE_STD = 1f
 
         // ===== 適宜変更 =====
-        // 検出対象番号( traffic light )
+        // 検出対象
         private const val DETECTION_TARGET = "traffic light"
         // 検出結果のスコアしきい値
-        private const val SCORE_THRESHOLD = 0.3f
-    }
-
-    private var imageRotationDegrees: Int = 0
-
-    @SuppressLint("UnsafeExperimentalUsageError")
-    override fun analyze(imageProxy: ImageProxy) {
-        if (imageProxy.image == null) return
-
-        imageRotationDegrees = imageProxy.imageInfo.rotationDegrees
-
-        // TODO : 交差点接近
-
-        // TODO : 車速の取得
-
-        //取得画像の大きさを取得
-        val imageProxySize = Size(imageProxy.width, imageProxy.height)
-
-        // TODO : ROI自動化
-        val roi = calcRoi(imageProxySize)
-
-        // 解析対象の画像を取得 (YUV -> RGB bitmap -> ROIで切り取る)
-        val roiBitmap = yuvToRoiBitmap(roi, imageProxy.image!!)
-        imageProxy.close() // imageProxyの解放 : 必ず呼ぶ
-
-        // 信号機検知処理(推論処理)
-        // *detectedObjectListのバウンディングボックスはimageProxy座標になっている
-        val detectedObjectList = detect(roi, roiBitmap)
-
-        // TODO : 信号機画像抜き出し (detectedObjectList, roiBitmap -> trafficLightBitmap)
-
-        // TODO : 色判定処理 (trafficLightBitmap -> lightingRed: boolean)
-
-        // TODO : 警告通知処理 (lightingRed, speed)
-
-        // 検出結果の表示(OverlaySurfaceView.kt参照)
-        overlaySurfaceView.draw(roi, detectedObjectList, imageProxySize, resultViewSize)
+        private const val SCORE_THRESHOLD = 0.1f
     }
 
     private val tfImageProcessor by lazy {
@@ -131,51 +89,9 @@ class Analyze(
         3 to outputDetectionNum
     )
 
-    // TODO : ROI自動化
-    // ROIの計算
-    private fun calcRoi(imageProxySize: Size): RectF {
-
-        return RectF(
-            // (ImageProxy座標)
-            imageProxySize.width / 5f * 2,
-            imageProxySize.height / 5f * 2,
-            imageProxySize.width / 5f * 3,
-            imageProxySize.height / 5f * 3f
-        )
-    }
-
-    // 画像をYUV -> RGB bitmap -> ROIで切り取る
-    private fun yuvToRoiBitmap(roi: RectF, targetImage: Image): Bitmap{
-
-        // YUVの生成
-        val targetBitmap = Bitmap.createBitmap(targetImage.width, targetImage.height, Bitmap.Config.ARGB_8888)
-
-        // RGB bitmapに変換
-        yuvToRgbConverter.yuvToRgb(targetImage, targetBitmap)
-
-        // ROIの領域を切り取る(ImageProxy座標)
-        val roiBitmap = Bitmap.createBitmap(
-            targetBitmap,
-            roi.left.toInt(),
-            roi.top.toInt(),
-            (roi.right - roi.left).toInt(),
-            (roi.bottom - roi.top).toInt(),
-            null,
-            true
-        )
-
-        Log.d("デバッグ", "targetBitmap.width:" + targetBitmap.width )
-        Log.d("デバッグ", "targetBitmap.height:" + targetBitmap.height )
-
-        Log.d("デバッグ", "roiBitmap.width:" + roiBitmap.width )
-        Log.d("デバッグ", "roiBitmap.height:" + roiBitmap.height )
-
-        return roiBitmap
-    }
-
     // ===== 推論処理 =====
     // 画像をRGB bitmap  -> tensorflowImage -> tensorflowBufferに変換して推論し結果をリストとして出力
-    private fun detect(roi: RectF, roiBitmap: Bitmap): List<DetectionObject> {
+    fun detect(roi: RectF, roiBitmap: Bitmap): List<DetectionObject> {
 
         tfImageBuffer.load(roiBitmap)
         val tensorImage = tfImageProcessor.process(tfImageBuffer)
@@ -185,7 +101,10 @@ class Analyze(
 
         // 推論結果を整形してリストにして返す
         val detectedObjectList = arrayListOf<DetectionObject>()
-        loop@ for (i in 0 until outputDetectionNum[0].toInt()) {
+
+        // 今回は1番確率の高い信号機の領域のみを出力するので
+        // ループは回さない
+        loop@ for (i in 0 until outputDetectionNum[0].toInt() ) {
             val score = outputScores[0][i]
             val label = labels[outputLabels[0][i].toInt()]
 
@@ -213,4 +132,49 @@ class Analyze(
         }
         return detectedObjectList.take(4)
     }
+
+
+    // ===== 色判定処理 =====
+    fun analyzeTrafficColor(inputImage: Bitmap): Boolean{
+
+        // bitmap to mat(rgb)
+        val inputMat = Mat()
+        Utils.bitmapToMat(inputImage, inputMat)
+
+        // convert rgb to hsv
+        Imgproc.cvtColor(inputMat, inputMat, Imgproc.COLOR_RGB2HSV)
+        val outputMat = Mat()
+
+        // only show the red area
+        Core.inRange(inputMat, Scalar(0.0, 100.0, 100.0), Scalar(10.0, 255.0, 255.0), outputMat)
+        Log.d(TAG, "row: ${outputMat.rows()}, col: ${outputMat.cols()}")
+        Log.d(TAG, "all number: ${outputMat.rows() * outputMat.cols()}")
+
+        // remove noises
+        //Imgproc.blur(outputMat, outputMat, Size(10.0, 10.0))
+
+        // convert output to binary
+        Imgproc.threshold(outputMat, outputMat, 80.0, 255.0, Imgproc.THRESH_BINARY)
+
+        return voteTrafficColor(outputMat)
+    }
+
+    private fun voteTrafficColor(image: Mat): Boolean {
+        val labelImg = Mat()
+        val stats = Mat()
+        val centroids = Mat()
+        val labelNum = Imgproc.connectedComponentsWithStats(image, labelImg, stats, centroids)
+
+        var vote = 0
+        var allArea = 0
+        for(i in 0..labelNum) {
+            val result = IntArray(labelNum)
+            stats.get(i, Imgproc.CC_STAT_AREA, result)
+            Log.d(TAG, "$i, ${result[0]}")
+            if(i == 0) allArea = result[0]
+            else vote += result[0]
+        }
+        return vote * 100 > allArea
+    }
+
 }

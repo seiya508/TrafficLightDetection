@@ -1,2 +1,3 @@
 rootProject.name = "Traffic Light Detection"
 include ':app'
+include ':opencv'
