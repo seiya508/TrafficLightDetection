@@ -1,6 +1,7 @@
 package com.example.trafficlightdetection
 
 import android.graphics.*
+import android.util.Size
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 
@@ -33,24 +34,60 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
     /**
      * surfaceViewに物体検出結果を表示
      */
-    fun draw(detectedObjectList: List<DetectionObject> , roi: RectF) {
+    fun draw(
+        roi: RectF,
+        detectedObjectList: List<DetectionObject>,
+        imageProxySize: Size,
+        resultViewSize: Size
+    ) {
+
         // surfaceHolder経由でキャンバス取得(画面がactiveでない時にもdrawされてしまいexception発生の可能性があるのでnullableにして以下扱ってます)
         val canvas: Canvas? = surfaceHolder.lockCanvas()
         // 前に描画していたものをクリア
         canvas?.drawColor(0, PorterDuff.Mode.CLEAR)
 
-        if( roi.left != roi.right){
-            // ROIの矩形を描画
-            paint.apply {
-                color = Color.MAGENTA
-                style = Paint.Style.STROKE
-                strokeWidth = 5f
-                isAntiAlias = false
-            }
-            canvas?.drawRect(roi, paint)
+        // ImageProxy座標　-> ResultView座標への変換値
+        val imageProxyToResultViewX = resultViewSize.width.toFloat() / imageProxySize.width
+        val imageProxyToResultViewY = resultViewSize.height.toFloat() / imageProxySize.height
+
+        // ImageProxy座標　-> ResultView座標への変換
+        var ipRoi = Rect(
+            (roi.left * imageProxyToResultViewX).toInt(),
+            (roi.top * imageProxyToResultViewY).toInt(),
+            (roi.right * imageProxyToResultViewX).toInt(),
+            (roi.bottom * imageProxyToResultViewY).toInt()
+        )
+
+        // ROIを白い矩形で囲う
+        paint.apply {
+            color = Color.rgb(255, 255, 255)
+            style = Paint.Style.STROKE
+            strokeWidth = 7f
+            isAntiAlias = false
         }
+        canvas?.drawRect(Rect(ipRoi.left, ipRoi.top, ipRoi.right, ipRoi.bottom), paint)
+
+        // ROI以外を半透明にする
+//        paint.apply {
+//            color = Color.argb(127, 0, 0, 0)
+//            style = Paint.Style.FILL
+//            isAntiAlias = false
+//        }
+//        canvas?.drawRect(Rect(0, 0, ipRoi.right, ipRoi.top), paint)
+//        canvas?.drawRect(Rect(0, ipRoi.top, ipRoi.left, resultViewSize.height), paint)
+//        canvas?.drawRect(Rect(ipRoi.left, ipRoi.bottom, resultViewSize.width, resultViewSize.height), paint)
+//        canvas?.drawRect(Rect(ipRoi.right, 0, resultViewSize.width, ipRoi.bottom), paint)
 
         detectedObjectList.mapIndexed { i, detectionObject ->
+
+            // ImageProxy座標　-> ResultView座標への変換
+            detectionObject.boundingBox = RectF(
+                detectionObject.boundingBox.right * imageProxyToResultViewX,
+                detectionObject.boundingBox.top * imageProxyToResultViewY,
+                detectionObject.boundingBox.left * imageProxyToResultViewX,
+                detectionObject.boundingBox.bottom * imageProxyToResultViewY
+            )
+
             // バウンディングボックスの表示
             paint.apply {
                 color = pathColorList[i]

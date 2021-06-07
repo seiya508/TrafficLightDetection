@@ -5,8 +5,6 @@ import android.os.Bundle
 import android.Manifest
 import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
-import android.graphics.Rect
-import android.graphics.RectF
 import android.util.Log
 import android.util.Size
 import android.widget.Toast
@@ -15,7 +13,7 @@ import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
-import com.example.android.camera.utils.com.example.trafficlightdetection.ObjectDetector
+import com.example.android.camera.utils.com.example.trafficlightdetection.Analyze
 import com.example.android.camera.utils.com.example.trafficlightdetection.YuvToRgbConverter
 import kotlinx.android.synthetic.main.activity_main.*
 import org.tensorflow.lite.Interpreter
@@ -25,33 +23,27 @@ import java.io.InputStream
 import java.io.InputStreamReader
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
-import java.util.*
 import java.util.concurrent.ExecutorService
 
 class MainActivity : AppCompatActivity() {
     companion object {
-        private const val TAG = "CameraXBasic"
         private const val REQUEST_CODE_PERMISSIONS = 10
         private val REQUIRED_PERMISSIONS = arrayOf(Manifest.permission.CAMERA)
 
         // モデル名とラベル名
         private const val MODEL_FILE_NAME = "ssd_mobilenet_v1.tflite"
         private const val LABEL_FILE_NAME = "coco_dataset_labels.txt"
+
+        // 取得画像解像度
+        // システムによって変更されるため、ObjectDetector.kt内で取得画像から再取得
+        private const val imageProxyWidth = 1920
+        private const val imageProxyHeight = 1080
     }
 
     private lateinit var cameraExecutor: ExecutorService
 
     // Surface Viewのコールバックをセット
     private lateinit var overlaySurfaceView: OverlaySurfaceView
-
-    //クロップ(ROI)の座標
-    // left == right のときはROIを設定しない
-    private var roi = RectF(
-        (1600f/2f - 150f) * 1080f/1600f,
-        (1200f/2f - 150f) * 1536f/1200f,
-        (1600f/2f - 150f) * 1080f/1600f,
-        (1200f/2f + 150f) * 1536f/1200f
-    )
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -63,32 +55,6 @@ class MainActivity : AppCompatActivity() {
         } else {
             ActivityCompat.requestPermissions(
                 this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
-        }
-
-        Log.d("デバッグ", "roi:" + roi.left + " ?= " + roi.right )
-
-        crop_button.setOnClickListener{
-            if( roi.left == roi.right ){
-                // ROIの設定
-                roi.right = (1600f/2f + 150f) * 1080f/1600f
-//                    RectF(
-//                    // (ImageProxy座標)
-//                    1600/2 - 150,
-//                    1200/2 -150,
-//                    1600/2 + 150,
-//                    1200/2 + 150
-//                    // (ResultView座標)
-//                    (1600f/2f - 150f) * 1080f/1600f,
-//                    (1200f/2f - 150f) * 1536f/1200f,
-//                    (1600f/2f + 150f) * 1080f/1600f,
-//                    (1200f/2f + 150f) * 1536f/1200f
-//                )
-
-            }else{
-                roi.right = roi.left
-            }
-            Log.d("デバッグ", "Button pushed")
-            Log.d("デバッグ", "roi:" + roi.left + " ?= " + roi.right )
         }
 
         overlaySurfaceView = OverlaySurfaceView(resultView)
@@ -116,27 +82,23 @@ class MainActivity : AppCompatActivity() {
             val imageAnalyzer = ImageAnalysis.Builder()
                 .setTargetRotation(cameraView.display.rotation)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST) // 最新のcameraのプレビュー画像だけをを流す
-                .setTargetResolution(Size(1920, 1080))
+                .setTargetResolution(Size(imageProxyWidth, imageProxyHeight))
                 .build()
                 // 推論処理へ移動 (ObjectDetector.kt参照)
                 .also {
                     it.setAnalyzer(
                         cameraExecutor,
-                        ObjectDetector(
+
+                        // 画像解析(ObjectDetector.kt参照)
+                        Analyze(
                             yuvToRgbConverter,
                             interpreter,
                             labels,
-                            Size(resultView.width, resultView.height),
-                            roi
-                        ) { detectedObjectList ->
 
-                            // ===== 検出結果の表示(OverlaySurfaceView.kt参照) =====
-                            overlaySurfaceView.draw(
-                                detectedObjectList,
-                                roi
-                            )
+                            overlaySurfaceView,
+                            Size(resultView.width, resultView.height)
+                        )
 
-                        }
                     )
                 }
 
@@ -149,7 +111,7 @@ class MainActivity : AppCompatActivity() {
                     this, cameraSelector, preview, imageAnalyzer)
 
             } catch(exc: Exception) {
-                Log.e(TAG, "Use case binding failed", exc)
+                Log.e("CameraX", "Use case binding failed", exc)
             }
 
         }, ContextCompat.getMainExecutor(this))
@@ -221,7 +183,7 @@ class MainActivity : AppCompatActivity() {
             val reader = BufferedReader(InputStreamReader(inputStream))
             labels = reader.readLines()
         } catch (e: Exception) {
-            Toast.makeText(this, "txtファイル読み込みエラー", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "モデルデータを読み込めませんでした", Toast.LENGTH_SHORT).show()
             finish()
         } finally {
             inputStream?.close()

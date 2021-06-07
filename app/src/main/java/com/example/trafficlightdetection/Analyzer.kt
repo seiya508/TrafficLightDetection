@@ -1,9 +1,7 @@
 package com.example.android.camera.utils.com.example.trafficlightdetection
 
-import android.R.attr.bitmap
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.graphics.Rect
 import android.graphics.RectF
 import android.media.Image
 import android.util.Log
@@ -11,35 +9,33 @@ import android.util.Size
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import com.example.trafficlightdetection.DetectionObject
+import com.example.trafficlightdetection.OverlaySurfaceView
+import kotlinx.android.synthetic.main.activity_main.*
 import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
 import org.tensorflow.lite.support.common.ops.NormalizeOp
 import org.tensorflow.lite.support.image.ImageProcessor
 import org.tensorflow.lite.support.image.TensorImage
 import org.tensorflow.lite.support.image.ops.ResizeOp
-import org.tensorflow.lite.support.image.ops.ResizeWithCropOrPadOp
 import org.tensorflow.lite.support.image.ops.Rot90Op
 
-
-typealias ObjectDetectorCallback = (image: List<DetectionObject>) -> Unit
 /**
  * CameraXの物体検知の画像解析ユースケース
  * @param yuvToRgbConverter カメラ画像のImageバッファYUV_420_888からRGB形式に変換する
  * @param interpreter tfliteモデルを操作するライブラリ
  * @param labels 正解ラベルのリスト
- * @param resultViewSize 結果を表示するsurfaceViewのサイズ
- * @param listener コールバックで解析結果のリストを受け取る
+ *
+ * @param overlaySurfaceView Surface Viewのコールバック
+ * @param imageProxySize 取得画像のサイズ
+ * @param resultViewSize プレビューのサイズ
  */
-class ObjectDetector(
+class Analyze(
     private val yuvToRgbConverter: YuvToRgbConverter,
     private val interpreter: Interpreter,
     private val labels: List<String>,
-    private val resultViewSize: Size,
 
-    // ROI領域の設定
-    private val roi: RectF,
-
-    private val listener: ObjectDetectorCallback
+    private var overlaySurfaceView: OverlaySurfaceView,
+    private val resultViewSize: Size
 ) : ImageAnalysis.Analyzer {
 
     companion object {
@@ -62,15 +58,37 @@ class ObjectDetector(
     private var imageRotationDegrees: Int = 0
 
     @SuppressLint("UnsafeExperimentalUsageError")
-    override fun analyze(image: ImageProxy) {
-        if (image.image == null) return
+    override fun analyze(imageProxy: ImageProxy) {
+        if (imageProxy.image == null) return
 
-        imageRotationDegrees = image.imageInfo.rotationDegrees
-        val detectedObjectList = detect(image.image!!)
+        imageRotationDegrees = imageProxy.imageInfo.rotationDegrees
 
-        // ===== ここで推論処理(detect関数でコールバック) =====
-        listener(detectedObjectList) //コールバックで検出結果を受け取る
-        image.close()  //必ず呼ぶ：システムリソースの開放
+        // TODO : 交差点接近
+
+        // TODO : 車速の取得
+
+        //取得画像の大きさを取得
+        val imageProxySize = Size(imageProxy.width, imageProxy.height)
+
+        // TODO : ROI自動化
+        val roi = calcRoi(imageProxySize)
+
+        // 解析対象の画像を取得 (YUV -> RGB bitmap -> ROIで切り取る)
+        val roiBitmap = yuvToRoiBitmap(roi, imageProxy.image!!)
+        imageProxy.close() // imageProxyの解放 : 必ず呼ぶ
+
+        // 信号機検知処理(推論処理)
+        // *detectedObjectListのバウンディングボックスはimageProxy座標になっている
+        val detectedObjectList = detect(roi, roiBitmap)
+
+        // TODO : 信号機画像抜き出し (detectedObjectList, roiBitmap -> trafficLightBitmap)
+
+        // TODO : 色判定処理 (trafficLightBitmap -> lightingRed: boolean)
+
+        // TODO : 警告通知処理 (lightingRed, speed)
+
+        // 検出結果の表示(OverlaySurfaceView.kt参照)
+        overlaySurfaceView.draw(roi, detectedObjectList, imageProxySize, resultViewSize)
     }
 
     private val tfImageProcessor by lazy {
@@ -113,59 +131,57 @@ class ObjectDetector(
         3 to outputDetectionNum
     )
 
-    // ===== 推論処理 =====
-    // 画像をYUV -> RGB bitmap -> tensorflowImage -> tensorflowBufferに変換して推論し結果をリストとして出力
-    private fun detect(targetImage: Image): List<DetectionObject> {
-        var targetBitmap = Bitmap.createBitmap(targetImage.width, targetImage.height, Bitmap.Config.ARGB_8888)
-        yuvToRgbConverter.yuvToRgb(targetImage, targetBitmap) // rgbに変換
+    // TODO : ROI自動化
+    // ROIの計算
+    private fun calcRoi(imageProxySize: Size): RectF {
 
-        var croppedBitmap = targetBitmap
-
-        Log.d("デバッグ", "roi:" + roi.left + " ?= " + roi.right )
-
-        // ROIをクロップする(ResultView座標->ImageProxy座標に変換)
-        val ipRoi = RectF(
-            roi.left * 1600f/1080f,
-            roi.top * 1200f/1536f,
-            roi.right * 1600f/1080f,
-            roi.bottom * 1200f/1536f
-        // ImageProxy / ResultView
+        return RectF(
+            // (ImageProxy座標)
+            imageProxySize.width / 5f * 2,
+            imageProxySize.height / 5f * 2,
+            imageProxySize.width / 5f * 3,
+            imageProxySize.height / 5f * 3f
         )
+    }
 
-        Log.d("デバッグ", "ipRoi:" + ipRoi.left + " ?= " + ipRoi.right )
+    // 画像をYUV -> RGB bitmap -> ROIで切り取る
+    private fun yuvToRoiBitmap(roi: RectF, targetImage: Image): Bitmap{
 
-        if( roi.left != roi.right ){
-            croppedBitmap = Bitmap.createBitmap(
-                targetBitmap,
-                ipRoi.left.toInt(),
-                ipRoi.top.toInt(),
-                (ipRoi.right - ipRoi.left).toInt(),
-                (ipRoi.bottom - ipRoi.top).toInt(),
-                null,
-                true
-            )
+        // YUVの生成
+        val targetBitmap = Bitmap.createBitmap(targetImage.width, targetImage.height, Bitmap.Config.ARGB_8888)
 
-            Log.d("デバッグ", "===== Cropped =====")
-        }
+        // RGB bitmapに変換
+        yuvToRgbConverter.yuvToRgb(targetImage, targetBitmap)
+
+        // ROIの領域を切り取る(ImageProxy座標)
+        val roiBitmap = Bitmap.createBitmap(
+            targetBitmap,
+            roi.left.toInt(),
+            roi.top.toInt(),
+            (roi.right - roi.left).toInt(),
+            (roi.bottom - roi.top).toInt(),
+            null,
+            true
+        )
 
         Log.d("デバッグ", "targetBitmap.width:" + targetBitmap.width )
         Log.d("デバッグ", "targetBitmap.height:" + targetBitmap.height )
 
-        Log.d("デバッグ", "croppedBitmap.width:" + croppedBitmap.width )
-        Log.d("デバッグ", "croppedBitmap.height:" + croppedBitmap.height )
+        Log.d("デバッグ", "roiBitmap.width:" + roiBitmap.width )
+        Log.d("デバッグ", "roiBitmap.height:" + roiBitmap.height )
 
-        Log.d("デバッグ", "resultView.width:" + resultViewSize.width )
-        Log.d("デバッグ", "resultView.height:" + resultViewSize.height )
+        return roiBitmap
+    }
 
-        tfImageBuffer.load(croppedBitmap)
+    // ===== 推論処理 =====
+    // 画像をRGB bitmap  -> tensorflowImage -> tensorflowBufferに変換して推論し結果をリストとして出力
+    private fun detect(roi: RectF, roiBitmap: Bitmap): List<DetectionObject> {
+
+        tfImageBuffer.load(roiBitmap)
         val tensorImage = tfImageProcessor.process(tfImageBuffer)
 
         //tfliteモデルで推論の実行
         interpreter.runForMultipleInputsOutputs(arrayOf(tensorImage.buffer), outputMap)
-
-        // ImageProxy座標->ResultViewへの座標変換
-        var tmpX = resultViewSize.width.toFloat() / targetBitmap.width
-        var tmpY = resultViewSize.height.toFloat() / targetBitmap.height
 
         // 推論結果を整形してリストにして返す
         val detectedObjectList = arrayListOf<DetectionObject>()
@@ -173,36 +189,16 @@ class ObjectDetector(
             val score = outputScores[0][i]
             val label = labels[outputLabels[0][i].toInt()]
 
-            var boundingBox = RectF(
-                outputBoundingBoxes[0][i][1] * resultViewSize.width,
-                outputBoundingBoxes[0][i][0] * resultViewSize.height,
-                outputBoundingBoxes[0][i][3] * resultViewSize.width,
-                outputBoundingBoxes[0][i][2] * resultViewSize.height
+            // バウンディングボックスの計算 : 計算はroiとroiBitmapSizeで完結している
+            val boundingBox = RectF(
+                roi.left + outputBoundingBoxes[0][i][1] * roiBitmap.width,
+                roi.top + outputBoundingBoxes[0][i][0] * roiBitmap.height,
+                roi.left + outputBoundingBoxes[0][i][3] * roiBitmap.width,
+                roi.top + outputBoundingBoxes[0][i][2] * roiBitmap.height
             )
 
-            if( roi.left != roi.right ){
-                boundingBox = RectF(
-                    roi.left + outputBoundingBoxes[0][i][1] * IMG_SIZE_X * tmpX,
-                    roi.top + outputBoundingBoxes[0][i][0] * IMG_SIZE_Y * tmpY,
-                    roi.left + outputBoundingBoxes[0][i][3] * IMG_SIZE_X * tmpX,
-                    roi.top + outputBoundingBoxes[0][i][2] * IMG_SIZE_Y * tmpY
-                )
-            }
-
-            Log.d("デバッグ", "tmpX:" + tmpX )
-            Log.d("デバッグ", "tmpY:" + tmpY )
-
-            Log.d("デバッグ", "outputBoundingBoxesLeft:" + outputBoundingBoxes[0][i][1]
-                    + " : " + outputBoundingBoxes[0][i][1] * resultViewSize.width)
-            Log.d("デバッグ", "outputBoundingBoxesTop:" + outputBoundingBoxes[0][i][0]
-                    + " : " + outputBoundingBoxes[0][i][0] * resultViewSize.height)
-            Log.d("デバッグ", "outputBoundingBoxesRight:" + outputBoundingBoxes[0][i][3]
-                    + " : " + outputBoundingBoxes[0][i][3] * resultViewSize.width)
-            Log.d("デバッグ", "outputBoundingBoxesBottom:" + outputBoundingBoxes[0][i][2]
-                    + " : " + outputBoundingBoxes[0][i][2] * resultViewSize.height)
-
             // 検出対象 かつ　しきい値よりも大きいもののみ追加
-            if ( label == DETECTION_TARGET && score >= ObjectDetector.SCORE_THRESHOLD) {
+            if (label == DETECTION_TARGET && score >= SCORE_THRESHOLD) {
                 detectedObjectList.add(
                     DetectionObject(
                         score = score,
