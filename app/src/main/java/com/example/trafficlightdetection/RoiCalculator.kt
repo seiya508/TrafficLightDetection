@@ -11,10 +11,10 @@ class RoiCalculator() {
 
         return RectF(
             // (ImageProxy座標)
-            imageProxySize.width / 5f * 2,
-            imageProxySize.height / 5f * 2,
-            imageProxySize.width / 5f * 3,
-            imageProxySize.height / 5f * 3f
+            imageProxySize.width / 5f * 1,
+            imageProxySize.height / 5f * 1,
+            imageProxySize.width / 5f * 4,
+            imageProxySize.height / 5f * 4
         )
     }
 

@@ -36,7 +36,6 @@ class Analyze(
     private val yuvToRgbConverter: YuvToRgbConverter,
     private val interpreter: Interpreter,
     private val labels: List<String>,
-
     private var overlaySurfaceView: OverlaySurfaceView,
     private val resultViewSize: Size
 ) : ImageAnalysis.Analyzer {
@@ -76,7 +75,7 @@ class Analyze(
         val trafficLightBitmap = roiBitmap
 
         // 色判定処理
-        val redIsLighting = true //objectDetector.analyzeTrafficColor(trafficLightBitmap)
+        val redIsLighting = objectDetector.analyzeTrafficColor(trafficLightBitmap)
 
         // TODO : 警告通知処理 (, speed)
 

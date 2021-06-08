@@ -3,11 +3,13 @@ package com.example.trafficlightdetection
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.Manifest
+import android.app.Application
 import android.content.pm.PackageManager
 import android.content.res.AssetFileDescriptor
 import android.util.Log
 import android.util.Size
 import android.widget.Toast
+import androidx.camera.camera2.Camera2Config
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.util.concurrent.Executors
@@ -15,6 +17,7 @@ import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import com.example.android.camera.utils.com.example.trafficlightdetection.Analyze
 import com.example.android.camera.utils.com.example.trafficlightdetection.YuvToRgbConverter
+import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.android.synthetic.main.activity_main.*
 import org.opencv.android.OpenCVLoader
 import org.tensorflow.lite.Interpreter
@@ -46,17 +49,12 @@ class MainActivity : AppCompatActivity() {
     // Surface Viewのコールバックをセット
     private lateinit var overlaySurfaceView: OverlaySurfaceView
 
+    // CameraProvider
+    private lateinit var cameraProviderFuture : ListenableFuture<ProcessCameraProvider>
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        // Request camera permissions
-        if (allPermissionsGranted()) {
-            startCamera()
-        } else {
-            ActivityCompat.requestPermissions(
-                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
-        }
 
         Log.d("デバッグ", "Hello")
 
@@ -68,6 +66,17 @@ class MainActivity : AppCompatActivity() {
 
         overlaySurfaceView = OverlaySurfaceView(resultView)
         cameraExecutor = Executors.newSingleThreadExecutor()
+
+        // CameraProvider をリクエストする
+        cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+        // Request camera permissions
+        if (allPermissionsGranted()) {
+            startCamera()
+        } else {
+            ActivityCompat.requestPermissions(
+                this, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS)
+        }
     }
 
     private fun startCamera() {
@@ -77,15 +86,17 @@ class MainActivity : AppCompatActivity() {
             // Used to bind the lifecycle of cameras to the lifecycle owner
             val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
 
-            // Preview
-            val preview = Preview.Builder()
+            val preview : Preview = Preview.Builder()
                 .build()
-                .also {
-                    it.setSurfaceProvider(cameraView.createSurfaceProvider())
-                }
 
-            // Select back camera as a default
-            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+//          // Select back camera as a default
+//          val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            val cameraSelector : CameraSelector = CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_BACK)
+                .build()
+
+            preview.setSurfaceProvider(cameraView.createSurfaceProvider())
 
             // 画像解析(今回は物体検知)のユースケース
             val imageAnalyzer = ImageAnalysis.Builder()
@@ -103,7 +114,6 @@ class MainActivity : AppCompatActivity() {
                             yuvToRgbConverter,
                             interpreter,
                             labels,
-
                             overlaySurfaceView,
                             Size(resultView.width, resultView.height)
                         )
@@ -154,7 +164,6 @@ class MainActivity : AppCompatActivity() {
         cameraExecutor.shutdown()
     }
 
-    // ===== Tensorflow Lite で使うために追加 =====
     // tfliteモデルを扱うためのラッパーを含んだinterpreter
     private val interpreter: Interpreter by lazy {
         Interpreter(loadModel())
