@@ -8,27 +8,17 @@ import android.util.Log
 import android.util.Size
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
-import com.example.trafficlightdetection.DetectionObject
 import com.example.trafficlightdetection.ObjectDetector
 import com.example.trafficlightdetection.OverlaySurfaceView
 import com.example.trafficlightdetection.RoiCalculator
-import kotlinx.android.synthetic.main.activity_main.*
-import org.tensorflow.lite.DataType
 import org.tensorflow.lite.Interpreter
-import org.tensorflow.lite.support.common.ops.NormalizeOp
-import org.tensorflow.lite.support.image.ImageProcessor
-import org.tensorflow.lite.support.image.TensorImage
-import org.tensorflow.lite.support.image.ops.ResizeOp
-import org.tensorflow.lite.support.image.ops.Rot90Op
 
 /**
  * Analyze内の画像解析ユースケース
  * @param yuvToRgbConverter カメラ画像のImageバッファYUV_420_888からRGB形式に変換する
  * @param interpreter tfliteモデルを操作するライブラリ
  * @param labels 正解ラベルのリスト
- *
  * @param overlaySurfaceView Surface Viewのコールバック
- * @param imageProxySize 取得画像のサイズ
  * @param resultViewSize プレビューのサイズ
  */
 
@@ -62,30 +52,38 @@ class Analyze(
         val roi = RoiCalculator().calcRoi(imageProxySize)
 
         // 解析対象の画像を取得 (YUV -> RGB bitmap -> ROIで切り取る)
-        val roiBitmap = cropBitmap(roi, yuvToRgbBitmap(imageProxy.image!!))
+        val bitmap = yuvToRgbBitmap(imageProxy.image!!)
+        val roiBitmap = cropBitmap(roi, bitmap)
 
         imageProxy.close() // imageProxyの解放 : 必ず呼ぶ
 
         // 信号機検知処理(推論処理)
-        // *detectedObjectListのバウンディングボックスはimageProxy座標になっている
+        // detectedObjectList : imageProxy座標になっている
         // 確率の高い順に格納されている
         val detectedObjectList = objectDetector.detect(roi, roiBitmap)
 
-        // TODO : 信号機画像抜き出し (detectedObjectList, roiBitmap -> trafficLightBitmap)
-        val trafficLightBitmap = roiBitmap
+        // 赤信号フラグ
+        var redIsLighting = false
 
-        // 色判定処理
-        val redIsLighting = objectDetector.analyzeTrafficColor(trafficLightBitmap)
+        // 信号機色判定処理(検知された場合のみ実行)
+        if(detectedObjectList.isNotEmpty()) {
+            // 最も確率の高い部分のみ抜き出す
+            val trafficLightBitmap = cropBitmap(detectedObjectList[0].boundingBox, bitmap)
+            redIsLighting = objectDetector.analyzeTrafficColor(trafficLightBitmap)
+        }
 
         // TODO : 警告通知処理 (, speed)
 
         // 検出結果の表示(OverlaySurfaceView.kt参照)
         overlaySurfaceView.draw(roi, detectedObjectList, redIsLighting, imageProxySize, resultViewSize)
+
+        // TODO : interpreterのリソースの解放(Analyze外)
+        // interpreter.close()
     }
 
 
     // 画像をYUV -> RGB bitmap に変換する
-    fun yuvToRgbBitmap(targetImage: Image): Bitmap {
+    private fun yuvToRgbBitmap(targetImage: Image): Bitmap {
 
         // YUVの生成
         val targetBitmap =
@@ -98,10 +96,12 @@ class Analyze(
     }
 
     // ROIで切り取る
-    fun cropBitmap(roi: RectF, targetBitmap: Bitmap): Bitmap{
+    private fun cropBitmap(roi: RectF, targetBitmap: Bitmap): Bitmap {
+
+        Log.d("Debug", "roi : " + roi)
 
         // ROIの領域を切り取る(ImageProxy座標)
-        val roiBitmap = Bitmap.createBitmap(
+        return Bitmap.createBitmap(
             targetBitmap,
             roi.left.toInt(),
             roi.top.toInt(),
@@ -110,13 +110,5 @@ class Analyze(
             null,
             true
         )
-
-        Log.d("デバッグ", "targetBitmap.width:" + targetBitmap.width )
-        Log.d("デバッグ", "targetBitmap.height:" + targetBitmap.height )
-
-        Log.d("デバッグ", "roiBitmap.width:" + roiBitmap.width )
-        Log.d("デバッグ", "roiBitmap.height:" + roiBitmap.height )
-
-        return roiBitmap
     }
 }

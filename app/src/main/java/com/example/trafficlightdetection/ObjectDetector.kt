@@ -102,13 +102,11 @@ class ObjectDetector(
         // 推論結果を整形してリストにして返す
         val detectedObjectList = arrayListOf<DetectionObject>()
 
-        // 今回は1番確率の高い信号機の領域のみを出力するので
-        // ループは回さない
-        loop@ for (i in 0 until outputDetectionNum[0].toInt() ) {
+        loop@ for (i in 0 until outputDetectionNum[0].toInt()) {
             val score = outputScores[0][i]
             val label = labels[outputLabels[0][i].toInt()]
 
-            // バウンディングボックスの計算 : 計算はroiとroiBitmapSizeで完結している
+            // バウンディングボックスの計算(roiBitmap座標)
             val boundingBox = RectF(
                 roi.left + outputBoundingBoxes[0][i][1] * roiBitmap.width,
                 roi.top + outputBoundingBoxes[0][i][0] * roiBitmap.height,
@@ -125,11 +123,15 @@ class ObjectDetector(
                         boundingBox = boundingBox
                     )
                 )
+
+                Log.d("Debug", "DOL.BB : [" + i + "] " + detectedObjectList[i].boundingBox)
+
             } else {
                 // 検出結果はスコアの高い順にソートされたものが入っているので、しきい値を下回ったらループ終了
                 break@loop
             }
         }
+
         return detectedObjectList.take(4)
     }
 

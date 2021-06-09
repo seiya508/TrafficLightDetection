@@ -1,5 +1,6 @@
 package com.example.trafficlightdetection
 
+import android.annotation.SuppressLint
 import android.graphics.*
 import android.util.Size
 import android.view.SurfaceHolder
@@ -8,6 +9,7 @@ import android.view.SurfaceView
 /**
  * 検出結果を表示する透過surfaceView
  */
+@SuppressLint("ViewConstructor")
 class OverlaySurfaceView(surfaceView: SurfaceView) :
     SurfaceView(surfaceView.context), SurfaceHolder.Callback {
 
@@ -18,7 +20,6 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
 
     private var surfaceHolder = surfaceView.holder
     private val paint = Paint()
-    private val pathColorList = listOf(Color.RED, Color.GREEN, Color.CYAN, Color.BLUE)
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         // surfaceViewを透過させる
@@ -52,7 +53,7 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
         val imageProxyToResultViewY = resultViewSize.height.toFloat() / imageProxySize.height
 
         // ImageProxy座標　-> ResultView座標への変換
-        var ipRoi = Rect(
+        val ipRoi = Rect(
             (roi.left * imageProxyToResultViewX).toInt(),
             (roi.top * imageProxyToResultViewY).toInt(),
             (roi.right * imageProxyToResultViewX).toInt(),
@@ -68,7 +69,7 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
         }
         canvas?.drawRect(Rect(ipRoi.left, ipRoi.top, ipRoi.right, ipRoi.bottom), paint)
 
-        // ROI以外を半透明にする
+//        // ROI以外を半透明にする
 //        paint.apply {
 //            color = Color.argb(127, 0, 0, 0)
 //            style = Paint.Style.FILL
@@ -79,24 +80,30 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
 //        canvas?.drawRect(Rect(ipRoi.left, ipRoi.bottom, resultViewSize.width, resultViewSize.height), paint)
 //        canvas?.drawRect(Rect(ipRoi.right, 0, resultViewSize.width, ipRoi.bottom), paint)
 
-        detectedObjectList.mapIndexed { i, detectionObject ->
+//        detectedObjectList.mapIndexed { i, detectionObject ->
 
-            // ImageProxy座標　-> ResultView座標への変換
-            detectionObject.boundingBox = RectF(
-                detectionObject.boundingBox.right * imageProxyToResultViewX,
-                detectionObject.boundingBox.top * imageProxyToResultViewY,
-                detectionObject.boundingBox.left * imageProxyToResultViewX,
-                detectionObject.boundingBox.bottom * imageProxyToResultViewY
+        if(detectedObjectList.isNotEmpty()) {
+
+            // roiBitmap座標　-> ResultView座標への変換
+            detectedObjectList[0].boundingBox = RectF(
+                detectedObjectList[0].boundingBox.left * imageProxyToResultViewX,
+                detectedObjectList[0].boundingBox.top * imageProxyToResultViewY,
+                detectedObjectList[0].boundingBox.right * imageProxyToResultViewX,
+                detectedObjectList[0].boundingBox.bottom * imageProxyToResultViewY
             )
 
             // バウンディングボックスの表示
             paint.apply {
-                color = if(redIsLighting){ Color.RED }else{ Color.GREEN }
+                color = if (redIsLighting) {
+                    Color.RED
+                } else {
+                    Color.GREEN
+                }
                 style = Paint.Style.STROKE
                 strokeWidth = 7f
                 isAntiAlias = false
             }
-            canvas?.drawRect(detectionObject.boundingBox, paint)
+            canvas?.drawRect(detectedObjectList[0].boundingBox, paint)
 
             // ラベルとスコアの表示
             paint.apply {
@@ -105,12 +112,15 @@ class OverlaySurfaceView(surfaceView: SurfaceView) :
                 textSize = 77f
             }
             canvas?.drawText(
-                detectionObject.label + " " + "%,.2f".format(detectionObject.score * 100) + "%",
-                detectionObject.boundingBox.left,
-                detectionObject.boundingBox.top - 5f,
+                detectedObjectList[0].label + " " + "%,.2f".format(detectedObjectList[0].score * 100) + "%",
+                detectedObjectList[0].boundingBox.left,
+                detectedObjectList[0].boundingBox.top - 5f,
                 paint
             )
+
         }
+        
+//        }
 
         surfaceHolder.unlockCanvasAndPost(canvas ?: return)
     }
