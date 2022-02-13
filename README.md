@@ -1,7 +1,7 @@
 # TrafficLightDetection
-This android app judges whether the traffic light on camera is red or not.  
+This is android app which judges whether the traffic light on camera is red or not.  
 Note: This app was made at Programming Exercise of Enokida lab.  
-      This app can run ONLY  near Kyushu Institute of Technology IIzuka Campus!  
+      This app can run ONLY  near Kyushu Institute of Technology IIzuka Campus.  
 
 -Smartphone installed this app set dashboard in your car.  
 -App instructs appropriate mounting angle of smartphone using gyro sensor.  
